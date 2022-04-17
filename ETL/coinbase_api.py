@@ -261,7 +261,7 @@ if __name__=="__main__":
 
     api=init()
     _,server_dt=api.get_server_time()
-    start_dt=server_dt-datetime.timedelta(days=1)
+    start_dt=server_dt-datetime.timedelta(days=2)
 
 
     api.bulk_download_data(
