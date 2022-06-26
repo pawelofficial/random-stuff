@@ -38,7 +38,7 @@ if __name__=='__main__':
     if 0:
         dayz=[]
         print('not running loop')
-
+    programmerz=5
     for d in dayz:
         mask=sdf['day'].astype('str')==d
         df=sdf[mask].copy(deep=True) # gotta work on a df not a copy of sdf 
@@ -46,14 +46,15 @@ if __name__=='__main__':
         df['candles']=df['close']-df['open']  
         df['candles_zscore']=mdf.compute_lambda(func='roll_zscore',ser=df['candles'],window=window) 
         df['ewm_zscore']= mdf.compute_lambda(func='ewm_mean',ser=df['candles_zscore'],window=window )
-        df['x0'] = df['ewm_zscore'] # x0 made just for fun 
-        # x1 = zscore std 
-        df['x1']=mdf.compute_lambda(func='roll_std',ser=df['ewm_zscore'],window=window)  
+        f_diff = lambda ser,n: np.diff(ser,n, prepend=[np.nan for i in range(programmerz)] ) # derivative 
+        # x1 - cannot find a good one 
+        df['x1'] = f_diff(df['ewm_zscore'],programmerz) # ewm zscore derivative 
+        df['x1']=mdf.compute_lambda(func='roll_std',ser=df['ewm_zscore'],window=window) # ewm zscore std   
         # x2 -> distance from ewm 
-        df['x2']= df['candles_zscore']-df['ewm_zscore']
-        df['x1']=df['x2'] # using std for fitting returns super variable coefficient so let's just use x2 and x3 
+        df['x2']= df['candles_zscore']-df['ewm_zscore'] 
         # x3 -> integral of distance to ewm
         df['x3']=mdf.compute_lambda(func='trapz',ser=df['x2'],window=window)
+        df['x1']=df['x2'] # getting rid of x1 altogether 
         input=['x1','x2','x3']
         output=['ewm_zscore']
         mydf=df.dropna(how='any')
