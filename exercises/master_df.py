@@ -39,11 +39,24 @@ class masterdf:
         # idk - integral 
         self.lambda_d['trapz'] = lambda ser,window: ser.rolling(window=window).apply(lambda x:np.trapz(x))
 
+        # floors datetime series into a scale 
+        self.lambda_d['floor_dt'] = lambda ser,scale: ser.apply(
+                lambda dt : dt - datetime.timedelta(
+                    minutes=(dt.minute) % scale,
+                    seconds=dt.second,
+                    microseconds=dt.microsecond)
+                                                                )
+
+        self.lambda_d['max'] = lambda df,key,tscale: df[[key,tscale]].groupby([tscale]).max().reset_index()
+        
         # 3.0 row functions  
         self.lambda_d['convert_dt']= lambda x: datetime.datetime.strptime(x,self.tformat) # converts string to datetime  
         self.lambda_d['timestamp_to_day']=lambda x: x.replace(hour=0, minute=0, second=0, microsecond=0)
         self.lambda_d['compute_sod']= lambda x: (self.lambda_d['convert_dt'](x) - self.lambda_d['convert_dt'](x).replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds() # second of a day 
-    
+
+
+
+
         
         self.row_functions=['convert_dt','compute_sod']
         
@@ -70,14 +83,79 @@ class masterdf:
             ser.fillna(value=value,inplace=inplace) # love one liners
             return 
         return ser.fillna(value=value,inplace=False)
+    
+    def aggregate(self, cols: list = ['open','close','low','high','volume'], tscale: int =5  ): 
+        # returns dataframe with aggregate values from self.df, self.df must contain
+        # aka 5min candle at time 09:05 contains data from <09:05 -> 09:09>
+        if len ( list ( set(cols).intersection( list(self.df.columns) ) )  ) !=len(cols): # check if all your cols exist in df 
+            print('incorrect columns specified ')
+            print(f'your cols : {cols}')
+            print(f'df cols: {list(self.df.columns)}')
+            raise 
+        if 'timestamp' not in (self.df.columns): # check if timestamp exists in df 
+            print(' timestamp column  must exist in df ')
+            raise
+        
+        dt_col='dt_'+str(tscale) # name of datetime column used for aggregation  
 
+        
+        if 'dt' not in list(self.df.columns): # make a datetime column if it doesn't exist in self.df 
+            self.df['dt']=self.compute_lambda(func='convert_dt',ser=raw_df['timestamp'])  # making datetime column in self df 
+        if dt_col not in list(self.df.columns): # make an aggregate dt column in self.df if it doesn't exist 
+            self.df[dt_col]=self.compute_lambda(func='floor_dt',ser=self.df['dt'],scale = tscale ) 
+        # declare dataframeto be returned 
+        agg_df=pd.DataFrame()
+        agg_df[dt_col] = self.compute_lambda(func='floor_dt',ser=self.df['dt'],scale = tscale ).unique() # add aggregate datetime into agg df 
+        # declare dictionary with aggregate functions on given columns
+        fun_d={  'open':lambda ser: ser.iloc[0],
+                 'close':lambda ser: ser.iloc[-1],
+                 'high':lambda ser: ser.max(),
+                 'low': lambda ser: ser.min()
+                }  
+        # for each column in cols add a groupby result to aggregate_df 
+        for col in cols:
+            g=self.df[[col,dt_col ]].groupby([dt_col]) # groupby object on given column and tscale 
+            x=g.apply(fun_d[col])[col].reset_index(name=col) # dataframe with results of apply on a groupby - not combined int oone line for clarity
+            agg_df=agg_df.merge(x,left_on=dt_col,right_on=dt_col) # merge groupby-apply results into agg_df 
+        return agg_df # dataframe with different aggregate functions applied on a different columns for a timescale 
 
-
-
-
-
-
+        
 if __name__=='__main__':
+    csv_file= 'BTC-USD2022-06-04_2022-06-05.csv'
+    #csv_file = 'BTC-USD2021-06-05_2022-06-05.csv'
+    mdf=masterdf(csv_file=csv_file)
+    raw_df=mdf.raw_df
+    mdf.df=raw_df
+    
+    cols=['close','open','high','low']
+    agg_df=mdf.aggregate(cols=cols,tscale=5)
+    agg_df=mdf.aggregate(cols=cols,tscale=15)
+    
+    df=mdf.df
+    s='2022-06-04T09:16:00.000000Z'
+
+    format='%Y-%m-%dT%H:%M:%S.%fZ'
+    czas=datetime.datetime.strptime(s,format)
+    mask=df['dt']<=czas
+    print(df[mask].dropna())
+    
+    print(agg_df)
+    exit(1)
+
+    
+    # make a datetime from timestmpa 
+    raw_df['dt']=mdf.compute_lambda(func='convert_dt',ser=raw_df['timestamp']) 
+    raw_df['5min']=mdf.compute_lambda(func='floor_dt',ser=raw_df['dt'],scale = 5 ) # floor datetime to scale 
+    
+    highs_ser=raw_df[['high','5min']].groupby(['5min']).max().reset_index()
+    print(raw_df['5min'])
+    print(highs_ser)
+    cols=['open','close','timestamp','dtt']
+    print(mdf.df.columns)
+    mdf.aggregate(cols=cols,tscale =5 )
+
+
+if __name__=='__main__x':
     csv_file= 'BTC-USD2022-06-04_2022-06-05.csv'
     csv_file = 'BTC-USD2021-06-05_2022-06-05.csv'
     mdf=masterdf(csv_file=csv_file)
